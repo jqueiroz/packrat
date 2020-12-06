@@ -1,4 +1,6 @@
 mod grammar {
+    use std::collections::HashMap;
+
     // TODO: generalize the symbol types
     pub type TerminalSymbolType = String;
     pub type NonterminalSymbolType = String;
@@ -19,14 +21,14 @@ mod grammar {
         NotPredicate(Box<Expression>),
     }
 
-    pub struct Rule {
+    /*pub struct Rule {
         pub symbol: TerminalSymbolType,
         pub expression: Box<Expression>,
-    }
+    }*/
 
     pub struct Grammar {
         pub starting_symbol: TerminalSymbolType,
-        pub rules: Vec<Rule>,
+        pub rules: HashMap<TerminalSymbolType, Box<Expression>>,
     }
 
     fn validate(_grammar: Grammar) -> bool {
@@ -98,8 +100,42 @@ pub mod helpers {
 }
 
 pub mod parsers {
-    pub mod naive {
+    pub enum ParsingResult {
+        Success(i64), // i64: number of bytes consumed
+        Failure,
+    }
 
+    pub mod naive {
+        use super::ParsingResult;
+        use super::super::grammar::{Grammar,Expression};
+
+        // TODO: generalize input so that it does not need to be a string (it could be an many-times-iterator of TerminalSymbolType, perhaps)
+        //pub fn parse(grammar: &Grammar, current_symbol: &NonterminalSymbolType, input: &str) -> ParsingResult {
+        pub fn parse(grammar: &Grammar, expression: &Expression, input: &str) -> ParsingResult {
+            match expression {
+                // Atomic
+                Expression::EmptyString => ParsingResult::Success(0),
+                Expression::TerminalSymbol(terminal) => ParsingResult::Failure, // TODO: implement
+                Expression::NonterminalSymbol(next_symbol) => {
+                    if let Some(next_expression) = grammar.rules.get(next_symbol) {
+                        return parse(grammar, &next_expression, input);
+                    } else {
+                        return ParsingResult::Failure;
+                    }
+                }
+
+                // Complex
+                Expression::Sequence(e1, e2) => {
+                    match parse(grammar, &e1, input) {
+                        ParsingResult::Success(consumed_chars) => {
+                            return ParsingResult::Failure; // TODO: fix
+                        }
+                        ParsingResult::Failure => ParsingResult::Failure,
+                    }
+                },
+                _ => ParsingResult::Failure,
+            }
+        }
     }
 
     pub mod packrat {
@@ -109,77 +145,73 @@ pub mod parsers {
 
 mod examples {
     mod grammars {
-        use super::super::grammar::*;
+        use std::collections::HashMap;
+        use super::super::grammar::{Grammar};
         use super::super::helpers::expression_builders::*;
 
         // Source: https://en.wikipedia.org/wiki/Parsing_expression_grammar#Examples
         pub fn arithmetic() -> Grammar {
-            Grammar {
+            let mut grammar = Grammar {
                 starting_symbol: String::from("Expr"),
-                rules: vec! [
-                    Rule {
-                        symbol: String::from("Expr"),
-                        expression: nonterminal_symbol("Sum"),
-                    },
-                    Rule {
-                        symbol: String::from("Sum"),
-                        expression: sequence(
-                            nonterminal_symbol("Product"),
-                            zero_or_more(
-                                sequence(
-                                    ordered_choice(
-                                        terminal_symbol("+"),
-                                        terminal_symbol("-"),
-                                    ),
-                                    nonterminal_symbol("Product")
-                                )
-                            )
-                        )
-                    },
-                    Rule {
-                        symbol: String::from("Product"),
-                        expression: sequence(
-                            nonterminal_symbol("Power"),
-                            zero_or_more(
-                                sequence(
-                                    ordered_choice(
-                                        terminal_symbol("*"),
-                                        terminal_symbol("/"),
-                                    ),
-                                    nonterminal_symbol("Power")
-                                )
-                            )
-                        )
-                    },
-                    Rule {
-                        symbol: String::from("Power"),
-                        expression: sequence(
-                            nonterminal_symbol("Value"),
-                            optional(
-                                sequence(
-                                    terminal_symbol("^"),
-                                    nonterminal_symbol("Power")
-                                )
-                            )
-                        )
-                    },
-                    Rule {
-                        symbol: String::from("Value"),
-                        expression: ordered_choice(
-                            one_or_more(
-                                multiple_ordered_choice(
-                                    nonterminal_symbol("0"),
-                                    (1..9).into_iter().map(|i| terminal_symbol(&i.to_string())).collect()
-                                ),
+                rules: HashMap::new(),
+            };
+            grammar.rules.insert(String::from("Expr"),
+                nonterminal_symbol("Sum"),
+            );
+            grammar.rules.insert(String::from("Sum"),
+                sequence(
+                    nonterminal_symbol("Product"),
+                    zero_or_more(
+                        sequence(
+                            ordered_choice(
+                                terminal_symbol("+"),
+                                terminal_symbol("-"),
                             ),
-                            multiple_sequence(
-                                terminal_symbol("("),
-                                vec! [ nonterminal_symbol("Expr"), terminal_symbol(")"), ]
-                            )
+                            nonterminal_symbol("Product")
                         )
-                    },
-                ]
-            }
+                    )
+                )
+            );
+            grammar.rules.insert(String::from("Product"),
+                sequence(
+                    nonterminal_symbol("Power"),
+                    zero_or_more(
+                        sequence(
+                            ordered_choice(
+                                terminal_symbol("*"),
+                                terminal_symbol("/"),
+                            ),
+                            nonterminal_symbol("Power")
+                        )
+                    )
+                )
+            );
+            grammar.rules.insert(String::from("Power"),
+                sequence(
+                    nonterminal_symbol("Value"),
+                    optional(
+                        sequence(
+                            terminal_symbol("^"),
+                            nonterminal_symbol("Power")
+                        )
+                    )
+                )
+            );
+            grammar.rules.insert(String::from("Value"),
+                ordered_choice(
+                    one_or_more(
+                        multiple_ordered_choice(
+                            nonterminal_symbol("0"),
+                            (1..9).into_iter().map(|i| terminal_symbol(&i.to_string())).collect()
+                        ),
+                    ),
+                    multiple_sequence(
+                        terminal_symbol("("),
+                        vec! [ nonterminal_symbol("Expr"), terminal_symbol(")"), ]
+                    )
+                )
+            );
+            return grammar;
         }
     }
 }
